@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music Stream</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f6f5e'/%3E%3Cpath d='M12 22V9l11-2v13' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='10' cy='22' r='3' fill='white'/%3E%3Ccircle cx='21' cy='20' r='3' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f4f3ef;
+    --panel: #ffffff;
+    --ink: #1c1d1f;
+    --muted: #6b6e73;
+    --line: #e2e0da;
+    --accent: #2f6f5e;
+    --accent-soft: #e3efe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141516;
+      --panel: #1d1f21;
+      --ink: #ecebe7;
+      --muted: #9a9ca0;
+      --line: #2e3033;
+      --accent: #6cc3a6;
+      --accent-soft: #1f322c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 1.6rem; letter-spacing: -0.01em; }
+  .sub { margin: 0 0 24px; color: var(--muted); }
+  .player {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  .now { margin: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .title { margin: 4px 0 16px; font-size: 1.25rem; font-weight: 600; overflow-wrap: anywhere; }
+  audio { width: 100%; }
+  .controls { display: flex; gap: 8px; margin-top: 12px; }
+  button {
+    font: inherit;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 6px 16px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible, li button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ol { list-style: none; margin: 24px 0 0; padding: 0; }
+  li button {
+    display: flex;
+    width: 100%;
+    gap: 12px;
+    align-items: baseline;
+    text-align: left;
+    border: 0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: transparent;
+  }
+  li button:hover { background: var(--accent-soft); }
+  li button[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .num { width: 2ch; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .name { flex: 1; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .empty { color: var(--muted); padding: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Music Stream</h1>
+  <p class="sub" id="summary">Loading library…</p>
+
+  <section class="player" aria-label="Player">
+    <p class="now">Now playing</p>
+    <p class="title" id="title">Nothing selected</p>
+    <audio id="audio" controls preload="metadata"></audio>
+    <div class="controls">
+      <button type="button" id="prev" aria-label="Previous track">&#9198; Prev</button>
+      <button type="button" id="next" aria-label="Next track">Next &#9197;</button>
+    </div>
+  </section>
+
+  <ol id="playlist" aria-label="Playlist"></ol>
+</main>
+<script>
+  const audio = document.getElementById("audio");
+  const list = document.getElementById("playlist");
+  const titleEl = document.getElementById("title");
+  let tracks = [];
+  let current = -1;
+
+  const fmtTime = (s) => {
+    if (s == null || !isFinite(s)) return "";
+    const m = Math.floor(s / 60);
+    return m + ":" + String(Math.round(s % 60)).padStart(2, "0");
+  };
+  const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
+
+  function render() {
+    list.replaceChildren();
+    if (!tracks.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "No audio files found in the library folder.";
+      list.append(li);
+      return;
+    }
+    tracks.forEach((t, i) => {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("aria-current", String(i === current));
+      const num = Object.assign(document.createElement("span"), { className: "num", textContent: i + 1 });
+      const name = Object.assign(document.createElement("span"), { className: "name", textContent: t.title });
+      const meta = Object.assign(document.createElement("span"), {
+        className: "meta",
+        textContent: [fmtTime(t.duration), fmtSize(t.size)].filter(Boolean).join(" · "),
+      });
+      btn.append(num, name, meta);
+      btn.addEventListener("click", () => play(i));
+      li.append(btn);
+      list.append(li);
+    });
+  }
+
+  function play(i) {
+    if (!tracks.length) return;
+    current = (i + tracks.length) % tracks.length;
+    const t = tracks[current];
+    audio.src = t.url;
+    titleEl.textContent = t.title;
+    document.title = t.title + " · Music Stream";
+    audio.play().catch(() => {});
+    render();
+  }
+
+  document.getElementById("prev").addEventListener("click", () => play(current <= 0 ? tracks.length - 1 : current - 1));
+  document.getElementById("next").addEventListener("click", () => play(current + 1));
+  audio.addEventListener("ended", () => { if (current < tracks.length - 1) play(current + 1); });
+
+  fetch("/api/tracks")
+    .then((r) => r.json())
+    .then((data) => {
+      tracks = data.tracks;
+      document.getElementById("summary").textContent = data.count + (data.count === 1 ? " track" : " tracks") + " in your library";
+      render();
+    })
+    .catch(() => { document.getElementById("summary").textContent = "Could not load the library."; });
+</script>
+</body>
+</html>
